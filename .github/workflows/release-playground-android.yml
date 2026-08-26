@@ -1,0 +1,175 @@
+name: Release - Android Playground APK
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to (re)publish Playground APK for, e.g. AGenUI-1.2.1'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release-playground-apk:
+    name: Build & Publish Playground APK
+    runs-on: ubuntu-latest
+    # Run for AGenUI-* tags (release event) or manual dispatch with such a tag
+    if: >-
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'AGenUI-')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(github.event.inputs.tag, 'AGenUI-'))
+
+    steps:
+      # ==================== Setup ====================
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # For manual dispatch, check out the exact tag being (re)published;
+          # for a release event the default (tag commit) is already correct.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          VERSION="${TAG#AGenUI-}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: ${VERSION} from tag: ${TAG}"
+
+          # Extract base version (x.y.z) - used as the build version and for
+          # the consistency check, so suffix tags like AGenUI-1.4.0.beta1
+          # still build with version 1.4.0
+          BASE_VERSION=$(echo "$VERSION" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+          if [[ -z "${BASE_VERSION}" ]]; then
+            echo "::error::Cannot extract a base version (x.y.z) from tag: ${TAG}"
+            exit 1
+          fi
+          echo "base_version=${BASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Base version: ${BASE_VERSION}"
+
+      - name: Verify version consistency
+        run: |
+          HEADER_VERSION=$(grep -o '#define AGENUI_VERSION "[^"]*"' core/include/agenui_version.h | sed 's/#define AGENUI_VERSION "//;s/"//')
+          BASE_VERSION="${{ steps.version.outputs.base_version }}"
+          if [[ "$HEADER_VERSION" != "$BASE_VERSION" ]]; then
+            echo "::error::Version mismatch! Tag base version: ${BASE_VERSION}, agenui_version.h: ${HEADER_VERSION}"
+            echo "Please ensure the version in core/include/agenui_version.h matches the tag."
+            exit 1
+          fi
+          echo "✅ Version verified: header=${HEADER_VERSION}, tag base=${BASE_VERSION}"
+
+      # ==================== Build Environment ====================
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install NDK and CMake
+        run: |
+          # 27.3: pinned by the SDK module for compiling native code.
+          sdkmanager --install "ndk;27.3.13750724"
+          # 27.0: AGP 8.9 default NDK. The playground app module does not pin
+          # ndkVersion, so AGP uses this default for the packaging-time
+          # stripDebugSymbols step. If it is missing, stripping is silently
+          # skipped and the APK ships unstripped native libraries (~10x larger).
+          sdkmanager --install "ndk;27.0.12077973"
+          sdkmanager --install "cmake;3.18.1"
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-playground-${{ hashFiles('platforms/android/**/*.gradle*', 'playground/android/**/*.gradle*', 'playground/android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-playground-
+            ${{ runner.os }}-gradle-
+
+      # ==================== Restore signing keystore ====================
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.ANDROID_PLAYGROUND_KEYSTORE_BASE64 }}" | base64 -d > "${RUNNER_TEMP}/agenui-playground-release.jks"
+          echo "Keystore restored to ${RUNNER_TEMP}/agenui-playground-release.jks"
+
+      # ==================== Verify signing secrets (masked, no values leaked) ====================
+      - name: Check signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_PLAYGROUND_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_PLAYGROUND_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_PLAYGROUND_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_PLAYGROUND_KEY_PASSWORD }}
+        run: |
+          missing=()
+          [[ -n "${KEYSTORE_BASE64}" ]] || missing+=(ANDROID_PLAYGROUND_KEYSTORE_BASE64)
+          [[ -n "${KEYSTORE_PASSWORD}" ]] || missing+=(ANDROID_PLAYGROUND_KEYSTORE_PASSWORD)
+          [[ -n "${KEY_ALIAS}" ]] || missing+=(ANDROID_PLAYGROUND_KEY_ALIAS)
+          [[ -n "${KEY_PASSWORD}" ]] || missing+=(ANDROID_PLAYGROUND_KEY_PASSWORD)
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::The following repository secrets are empty or not visible to this workflow: ${missing[*]}"
+            echo "Check Settings > Secrets and variables > Actions > Repository secrets (exact names, case-sensitive)."
+            exit 1
+          fi
+          echo "✅ All signing secrets are present"
+
+      # ==================== Build signed APK ====================
+      - name: Build signed Playground APK
+        env:
+          ANDROID_PLAYGROUND_KEYSTORE_PATH: ${{ runner.temp }}/agenui-playground-release.jks
+          ANDROID_PLAYGROUND_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_PLAYGROUND_KEYSTORE_PASSWORD }}
+          ANDROID_PLAYGROUND_KEY_ALIAS: ${{ secrets.ANDROID_PLAYGROUND_KEY_ALIAS }}
+          ANDROID_PLAYGROUND_KEY_PASSWORD: ${{ secrets.ANDROID_PLAYGROUND_KEY_PASSWORD }}
+        run: |
+          ./scripts/android/build-playground.sh \
+            --version "${{ steps.version.outputs.base_version }}" \
+            --artifact-name "AGenUI-Playground.apk" \
+            --clean
+
+      - name: Verify APK artifact
+        run: |
+          APK_PATH="dist/android/playground/AGenUI-Playground.apk"
+          if [[ ! -f "$APK_PATH" ]]; then
+            echo "::error::Expected APK not found: ${APK_PATH}"
+            ls -la dist/android/playground/ 2>/dev/null || echo "dist/android/playground/ does not exist"
+            exit 1
+          fi
+          echo "✅ APK artifact exists: ${APK_PATH}"
+          ls -lh "${APK_PATH}" "${APK_PATH}.sha256"
+
+      # ==================== Upload to GitHub Release ====================
+      - name: Upload APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          APK_DIR="dist/android/playground"
+          ARTIFACT="AGenUI-Playground.apk"
+          echo "Uploading ${ARTIFACT} (tag ${TAG}, version ${VERSION}) to release ${TAG}..."
+          gh release upload "${TAG}" "${APK_DIR}/${ARTIFACT}" "${APK_DIR}/${ARTIFACT}.sha256" --clobber
+          echo "✅ Upload complete"
+
+      # ==================== Summary ====================
+      - name: Summary
+        if: success()
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "## 🤖 Android Playground APK Release Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | \`${VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Signed APK | built & verified ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub Release | APK + SHA-256 uploaded ✅ |" >> "$GITHUB_STEP_SUMMARY"

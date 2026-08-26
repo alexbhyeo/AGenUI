@@ -21,6 +21,7 @@ PLAYGROUND_ROOT="${REPO_ROOT}/playground/android"
 
 VERSION=""
 VERSION_CODE=""
+ARTIFACT_NAME=""
 OUTPUT_DIR="${REPO_ROOT}/dist/android/playground"
 CLEAN_BUILD=false
 
@@ -31,6 +32,7 @@ usage() {
     echo "  --version <name>       Artifact and Android version name"
     echo "  --version-code <code>  Positive Android version code"
     echo "  --output-dir <path>    Output directory (default: dist/android/playground)"
+    echo "  --artifact-name <name> Artifact filename (default: AGenUI-Playground-<version>-android.apk)"
     echo "  --clean                Clean before building"
     echo "  -h, --help             Show this help"
 }
@@ -87,6 +89,11 @@ while [[ $# -gt 0 ]]; do
         --output-dir)
             [[ $# -ge 2 ]] || fail "--output-dir requires a value"
             OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --artifact-name)
+            [[ $# -ge 2 ]] || fail "--artifact-name requires a value"
+            ARTIFACT_NAME="$2"
             shift 2
             ;;
         --clean)
@@ -147,7 +154,11 @@ SOURCE_APK="${PLAYGROUND_ROOT}/app/build/outputs/apk/release/app-release.apk"
 [[ -f "${SOURCE_APK}" ]] || fail "Signed release APK was not produced: ${SOURCE_APK}"
 
 mkdir -p "${OUTPUT_DIR}"
-ARTIFACT_NAME="AGenUI-Playground-${VERSION}-android.apk"
+if [[ -z "${ARTIFACT_NAME}" ]]; then
+    ARTIFACT_NAME="AGenUI-Playground-${VERSION}-android.apk"
+fi
+[[ "${ARTIFACT_NAME}" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] ||
+    fail "Invalid artifact filename: ${ARTIFACT_NAME}"
 OUTPUT_APK="${OUTPUT_DIR}/${ARTIFACT_NAME}"
 CHECKSUM_FILE="${OUTPUT_APK}.sha256"
 
