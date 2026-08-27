@@ -2340,12 +2340,35 @@
               "description": "Specifies the font family. Use 'system' for the system default, or a font family name for custom fonts (e.g. system, Arial, PingFang SC)."
             },
             "font-weight": {
-              "enum": [
-                "normal",
-                "bold"
+              "oneOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "normal",
+                    "medium",
+                    "bold"
+                  ]
+                },
+                {
+                  "type": "integer",
+                  "enum": [
+                    100,
+                    200,
+                    300,
+                    400,
+                    500,
+                    600,
+                    700,
+                    800,
+                    900
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(100|200|300|400|500|600|700|800|900)$"
+                }
               ],
-              "type": "string",
-              "description": "Specifies the font weight. 'normal' is regular weight (400); 'bold' is bold weight (700). On Android, only the binary 'normal' / 'bold' values are supported."
+              "description": "Specifies the font weight. All three platforms accept both forms: the keywords 'normal' (400), 'medium' (500), 'bold' (700), and a numeric weight exactly on a 100~900 step, given either as a JSON number (e.g. 500) or as a pure integer string (e.g. \"500\"); any other value falls back to 400/normal. Platform caveats: 'medium' renders as a true medium weight on iOS, but as bold (fakeBold) on Android AmapText and Harmony, and as normal on the Android built-in Text component; numeric weights below API 28 on Android degrade to binary normal (<600) / bold (>=600)."
             },
             "line-height": {
               "oneOf": [
