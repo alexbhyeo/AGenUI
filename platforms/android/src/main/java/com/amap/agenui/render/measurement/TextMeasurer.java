@@ -320,7 +320,13 @@ public final class TextMeasurer {
         TextPaint paint = THREAD_LOCAL_PAINT.get();
         paint.reset();
         paint.setFlags(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
-        paint.setLinearText(true);
+        // DO NOT set linearText=true here. LinearText uses sub-pixel glyph metrics
+        // which are slightly narrower than the pixel-snapped metrics used by the
+        // rendering TextView. This systematic bias (~2-3px for CJK+digits strings)
+        // causes Yoga's cache rule YGMeasureModeNewMeasureSizeIsStricterAndStillValid
+        // to consider a fit-content width valid (lastComputedWidth <= newSize) when
+        // the rendered text actually wraps at that width — resulting in a 1-line box
+        // for 2-line content. Removing linearText aligns measurement with rendering.
         paint.density = context.getResources().getDisplayMetrics().density;
         paint.setTypeface(Typeface.DEFAULT);
         // defaultTextSizePx is already in px (Text: dp == render; RichText: 16sp); apply directly.
