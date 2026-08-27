@@ -53,7 +53,10 @@ import UIKit
     /// - Parameters:
     ///   - surface: The detected Surface
     ///   - isBlank: true means determined as blank
-    @objc optional func onBlankCheckResult(_ surface: Surface, isBlank: Bool)
+    ///   - componentCount: Component-tree size at detection time. Zero means chunks
+    ///     arrived but nothing was built; non-zero on a blank result means the
+    ///     opposite — components exist, too few of them measured non-empty.
+    @objc optional func onBlankCheckResult(_ surface: Surface, isBlank: Bool, componentCount: Int)
 
     /// Synchronously return the current size (in points) of the surface identified by `surfaceId`.
     ///
@@ -561,9 +564,9 @@ import UIKit
     }
     
     /// Notify listeners about a blank-check result (internal)
-    func notifyBlankCheckResult(surface: Surface, isBlank: Bool) {
+    func notifyBlankCheckResult(surface: Surface, isBlank: Bool, componentCount: Int) {
         for listener in snapshotListeners() {
-            listener.onBlankCheckResult?(surface, isBlank: isBlank)
+            listener.onBlankCheckResult?(surface, isBlank: isBlank, componentCount: componentCount)
         }
     }
 

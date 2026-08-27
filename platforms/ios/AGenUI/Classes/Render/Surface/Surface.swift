@@ -308,7 +308,7 @@ import UIKit
     /// Calling this method **immediately** schedules a single delayed detection.
     /// After `checkDelayMs` elapses, the SDK counts current valid components on
     /// this Surface and emits the result via
-    /// `SurfaceManagerListener.onBlankCheckResult(_:isBlank:)`.
+    /// `SurfaceManagerListener.onBlankCheckResult(_:isBlank:componentCount:)`.
     ///
     /// Calling again before the previous detection fires will cancel the previous
     /// schedule and start a new one with the latest parameters.
@@ -336,7 +336,9 @@ import UIKit
             }
             let isBlank = count < threshold
             Logger.shared.info("BlankCheck result: surface=\(self.surfaceId), count=\(count), threshold=\(threshold), isBlank=\(isBlank)")
-            self.surfaceManager?.notifyBlankCheckResult(surface: self, isBlank: isBlank)
+            self.surfaceManager?.notifyBlankCheckResult(surface: self,
+                                                       isBlank: isBlank,
+                                                       componentCount: self.componentTree.count)
         }
         blankCheckWorkItem = work
         

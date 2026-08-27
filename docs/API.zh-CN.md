@@ -240,7 +240,7 @@ public interface ISurfaceManagerListener {
     @objc optional func onReceiveActionEvent(_ event: String)
     @objc optional func onRootComponentUpdate(_ surface: Surface, props: [String: Any])
     @objc optional func onError(_ surface: Surface?, code: Int, message: String)
-    @objc optional func onBlankCheckResult(_ surface: Surface, isBlank: Bool)
+    @objc optional func onBlankCheckResult(_ surface: Surface, isBlank: Bool, componentCount: Int)
 }
 ```
 
