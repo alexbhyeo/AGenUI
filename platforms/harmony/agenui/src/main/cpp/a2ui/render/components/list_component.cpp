@@ -198,8 +198,6 @@ void ListComponent::onUpdateProperties(const nlohmann::json& properties) {
     // Horizontal lists also need this to honor margin-left/right between items,
     // because ArkUI ListItem stacks children tightly and ignores Yoga main-axis margin.
     updateListItemMargins();
-
-    HM_LOGD("id=%s, properties=%s", m_id.c_str(), properties.dump().c_str());
 }
 
 // ---- direction ----
@@ -300,24 +298,24 @@ void ListComponent::onChildLayoutSizeChanged(A2UIComponent* child) {
     ArkUI_NodeHandle listItemHandle = findListItemWrapper(child->getNodeHandle());
     if (!listItemHandle) return;
 
-    A2UINode itemNode(listItemHandle);
-    if (m_horizontal) {
-        // Horizontal list: sync ListItem width to child's Yoga-computed width.
-        if (child->getWidth() > 0.0f) {
-            itemNode.setWidth(child->getWidth());
-        }
-        // Height is governed by Yoga cross-axis layout.
-        if (child->getHeight() > 0.0f) {
-            itemNode.setHeight(child->getHeight());
-        }
-    } else {
+    if (!m_horizontal) {
         // Vertical list: ListItem width is always 100%, only sync height.
+        A2UINode itemNode(listItemHandle);
         if (child->getHeight() > 0.0f) {
             itemNode.setHeight(child->getHeight());
         }
     }
+    // Horizontal list: do NOT re-apply width/height here. createListItemWrapper()
+    // already sets the wrapper's final size once, correctly, at creation time
+    // (via handleAdapterAddNode's knownWidth/knownHeight). This method fires again
+    // on every subsequent style update for the child, and a *second* setWidth()
+    // call on an already-materialized NodeAdapter ListItem hits the same
+    // doesn't-reliably-re-measure bug documented on createListItemWrapper() --
+    // confirmed on-device: a spacer item explicitly sized to 6 a2ui units
+    // rendered ~10x wider on screen once this redundant override ran, despite
+    // the Yoga engine's own x/width bookkeeping being exactly correct throughout.
 
-    // Width change can shift sibling positions; recompute item margins.
+    // Width/position change can shift sibling positions; recompute item margins.
     updateListItemMargins();
 }
 
@@ -488,16 +486,30 @@ bool ListComponent::isHorizontal() const {
     return m_horizontal;
 }
 
-ArkUI_NodeHandle ListComponent::createListItemWrapper(ArkUI_NodeHandle childHandle) {
+ArkUI_NodeHandle ListComponent::createListItemWrapper(ArkUI_NodeHandle childHandle, float knownWidth,
+                                                       float knownHeight) {
     ArkUI_NodeHandle listItemHandle = g_nodeAPI->createNode(ARKUI_NODE_LIST_ITEM);
     g_nodeAPI->addChild(listItemHandle, childHandle);
     if (!m_horizontal) {
         // Vertical list: ListItem fills the list width so children stretch horizontally.
         A2UINode(listItemHandle).setPercentWidth(1.0f);
+    } else if (knownWidth > 0.0f) {
+        // Caller already knows the child's real Yoga-computed width (e.g.
+        // handleAdapterAddNode) -- set it directly instead of wrap_content.
+        // wrap_content-then-override was confirmed (via on-device logging)
+        // to sometimes leave the *visual* ListItem size stuck at whatever
+        // it measured before the override, even though the override itself
+        // recorded the correct value -- ArkUI's ListItem/NodeAdapter path
+        // doesn't reliably re-measure after a later setWidth()/setHeight()
+        // call. Same root cause as "gap"/per-item "margin" not applying.
+        A2UINode(listItemHandle).setWidth(knownWidth);
     } else {
         // Horizontal list: let ListItem width wrap its child so the ArkUI List
         // can sum up the correct content width for scrolling.
         A2UINode(listItemHandle).setWidth(-2.0f);  // wrap_content
+    }
+    if (m_horizontal && knownHeight > 0.0f) {
+        A2UINode(listItemHandle).setHeight(knownHeight);
     }
     m_listItemWrappers[childHandle] = listItemHandle;
     return listItemHandle;
@@ -653,20 +665,14 @@ void ListComponent::handleAdapterAddNode(uint32_t index, ArkUI_NodeAdapterEvent*
     }
 
     // createListItemWrapper creates the ListItem, adds the child node to it,
-    // configures width (wrap_content for horizontal), and tracks the mapping.
-    ArkUI_NodeHandle listItemHandle = createListItemWrapper(child->getNodeHandle());
-
-    // Apply the child's current Yoga-computed size to the wrapper so the
-    // List can measure scrollable content correctly from the first frame.
-    A2UINode itemNode(listItemHandle);
-    if (m_horizontal) {
-        if (child->getWidth() > 0.0f) {
-            itemNode.setWidth(child->getWidth());
-        }
-        if (child->getHeight() > 0.0f) {
-            itemNode.setHeight(child->getHeight());
-        }
-    }
+    // configures size (known width/height directly for horizontal, when we
+    // have them -- see the .cpp comment on the knownWidth/knownHeight
+    // parameters for why not wrap_content-then-override), and tracks the
+    // mapping.
+    ArkUI_NodeHandle listItemHandle = createListItemWrapper(
+        child->getNodeHandle(),
+        m_horizontal ? child->getWidth() : -1.0f,
+        m_horizontal ? child->getHeight() : -1.0f);
 
     // Apply cross-axis offset (horizontal list: y only; x is managed by List).
     onApplyChildPosition(child, child->getX(), child->getY());

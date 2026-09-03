@@ -549,7 +549,17 @@ void DateTimeInputComponent::onDatePickerChangeCallback(ArkUI_NodeEvent* event) 
 
     component->m_selectedDatePart = formatDateValue(nodeEvent->data[0].i32, nodeEvent->data[1].i32, nodeEvent->data[2].i32);
     component->m_currentValue = component->composeCurrentValue();
+    component->m_properties["value"] = component->m_currentValue;
     component->updateTriggerAppearance();
+
+    // Unlike TextField/ChoicePicker, this never pushed the picked value back
+    // into the data model -- the compact trigger showed the new date, but
+    // the submit action (which reads from the data model, not the widget)
+    // kept whatever "value" the server last sent. Mirrors
+    // ChoicePickerComponent::syncCurrentValue().
+    nlohmann::json changeJson;
+    changeJson["value"] = component->m_currentValue;
+    component->syncState(changeJson);
 }
 
 void DateTimeInputComponent::onTimePickerChangeCallback(ArkUI_NodeEvent* event) {
@@ -565,7 +575,12 @@ void DateTimeInputComponent::onTimePickerChangeCallback(ArkUI_NodeEvent* event) 
 
     component->m_selectedTimePart = formatTimeValue(nodeEvent->data[0].i32, nodeEvent->data[1].i32);
     component->m_currentValue = component->composeCurrentValue();
+    component->m_properties["value"] = component->m_currentValue;
     component->updateTriggerAppearance();
+
+    nlohmann::json changeJson;
+    changeJson["value"] = component->m_currentValue;
+    component->syncState(changeJson);
 }
 
 void DateTimeInputComponent::onDialogDidDisappear(void* userData) {

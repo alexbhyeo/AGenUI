@@ -123,7 +123,7 @@ private:
         // the callback (handles re-entrant requestFlush from inside the
         // flush callback). Hard cap prevents infinite loops from
         // pathological feedback cycles (e.g. A dirties B, B dirties A).
-        constexpr int kMaxFlushPasses = 8;
+        constexpr int kMaxFlushPasses = 50;
         int pass = 0;
         do {
             _pendingFlush = false;

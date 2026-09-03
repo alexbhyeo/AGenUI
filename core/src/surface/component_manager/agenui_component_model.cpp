@@ -94,8 +94,35 @@ void ComponentModel::syncValue(const std::string& attributeName, const std::stri
         return;
     }
 
-    // Only DataBindingData attributes need synchronization
     if (it->second->getDataType() != DataType::DataBindingData) {
+        // Interactive components (TextField, ChoicePicker, Slider,
+        // DateTimeInput, ...) call syncState()/syncValue() only for
+        // attributes they themselves consider user-editable, so reaching
+        // this point already means the caller wants this value written
+        // back. But it was silently dropped whenever the schema declared
+        // the attribute as a plain literal (e.g. "value": "2026-08-06")
+        // instead of an explicit {"path": "/date/value"} binding -- which
+        // is how this app's backend declares essentially every form
+        // field's initial value. The widget's own on-screen value still
+        // updated locally, but nothing ever reached the data model a
+        // submit button's action context reads from, so forms always
+        // submitted their original server-sent defaults regardless of
+        // what the user picked.
+        //
+        // Every observed schema names its data-model path as
+        // "/<componentId>/<attributeName>" -- exactly what the
+        // accompanying updateDataModel messages populate before this
+        // component is even created -- so deriving the path from the
+        // component's own id here is following an established convention,
+        // not guessing one.
+        if (_id.empty()) {
+            return;
+        }
+        IDataModel* dataModel = getDataModel();
+        if (dataModel == nullptr) {
+            return;
+        }
+        dataModel->syncBindingValue("/" + _id + "/" + attributeName, value);
         return;
     }
 

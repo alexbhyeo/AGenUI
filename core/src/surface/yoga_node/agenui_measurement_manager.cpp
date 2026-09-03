@@ -95,9 +95,21 @@ MeasureDecision MeasurementManagerImpl::shouldUseMeasureFunc(
         return MeasureDecision::Clear;
     }
 
-    // [Rule 4] Both axes are explicit pixels: Yoga can size the node directly
-    //          from styles; a measureFunc would only add cost and risk shadowing.
-    if (isExplicitPx(ctx.widthStyle) && isExplicitPx(ctx.heightStyle)) {
+    // [Rule 4] Both axes are resolvable by Yoga's own style math -- explicit
+    //          pixels, or a percentage against a definite parent size. Yoga
+    //          resolves a percentage axis directly, the same as explicit px;
+    //          it is NOT "auto" and does not need a measureFunc to size it.
+    //          A measureFunc here would only add cost and risk shadowing the
+    //          correct style-resolved size with a measure-callback placeholder
+    //          (e.g. an AT_MOST maxValue) that never gets corrected afterward.
+    //          (Previously this only checked isExplicitPx on both axes, which
+    //          meant any percentage-width leaf -- e.g. Image width:"100%" with
+    //          an explicit height -- fell through to Rule 7 and got a
+    //          measureFunc registered unnecessarily, permanently overriding
+    //          Yoga's correct percentage-of-parent resolution with whatever
+    //          placeholder the measure callback returned.)
+    if ((isExplicitPx(ctx.widthStyle) || isPercent(ctx.widthStyle)) &&
+        (isExplicitPx(ctx.heightStyle) || isPercent(ctx.heightStyle))) {
         return MeasureDecision::Clear;
     }
 

@@ -71,7 +71,12 @@ private:
     static float parseCssLength(const nlohmann::json& val, float fallback);
     bool isHorizontal() const;
 
-    ArkUI_NodeHandle createListItemWrapper(ArkUI_NodeHandle childHandle);
+    // knownWidth/knownHeight > 0 set the wrapper's size directly instead of
+    // wrap_content-then-override -- see the .cpp for why that matters
+    // (the override can leave the visual size stuck at the wrap_content
+    // value).
+    ArkUI_NodeHandle createListItemWrapper(ArkUI_NodeHandle childHandle, float knownWidth = -1.0f,
+                                            float knownHeight = -1.0f);
     ArkUI_NodeHandle findListItemWrapper(ArkUI_NodeHandle childHandle) const;
     void removeListItemWrapper(ArkUI_NodeHandle childHandle);
 

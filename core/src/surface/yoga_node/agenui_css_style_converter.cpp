@@ -1420,7 +1420,7 @@ void CSSStyleConverter::applyAspectRatio(YGNodeRef yogaNode, YogaValue value) {
     if (!yogaNode) {
         return;
     }
-    
+
     if (value.type() == YogaValue::kFloat) {
         YGNodeStyleSetAspectRatio(yogaNode, value.asFloat());
         return;
@@ -1429,12 +1429,19 @@ void CSSStyleConverter::applyAspectRatio(YGNodeRef yogaNode, YogaValue value) {
         return;
     }
     const std::string& actualValue = value.asString();
-    if (!actualValue.empty()) {
-        float aspectRatio = 0.0f;
-        if (parseAspectRatioValue(actualValue, aspectRatio)) {
-            YGNodeStyleSetAspectRatio(yogaNode, aspectRatio);
-        }
+    float aspectRatio = 0.0f;
+    if (!actualValue.empty() && parseAspectRatioValue(actualValue, aspectRatio)) {
+        YGNodeStyleSetAspectRatio(yogaNode, aspectRatio);
+        return;
     }
+    // Explicit "auto"/"none"/empty/unparseable: clear any previously-applied
+    // aspect-ratio (e.g. from a variant's default style) instead of silently
+    // leaving it in place. Without this, a caller-supplied width+height that
+    // is meant to override a variant default (like Image's "header" variant,
+    // which bakes in aspect-ratio:"16/9") can't actually cancel the inherited
+    // ratio -- Yoga keeps deriving one axis from the other via the stale
+    // aspect-ratio instead of respecting both explicit dimensions.
+    YGNodeStyleSetAspectRatio(yogaNode, YGUndefined);
 }
 
 static float parseLengthValue(const std::string& val) {
